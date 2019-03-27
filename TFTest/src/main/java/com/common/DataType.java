@@ -1,4 +1,4 @@
-package com.xiaomi.ai.domain.hotel.common;
+package com.common;
 
 /*
 * tf dataType enum

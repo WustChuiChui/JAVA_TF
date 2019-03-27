@@ -1,4 +1,4 @@
-package com.xiaomi.ai.domain.hotel.tf;
+package com.common;
 
 import java.util.List;
 
