@@ -1,11 +1,9 @@
 package com.common;
-
 import java.util.List;
 import java.util.Map;
 
 /*
 * @brief: TensorFlow 通用模型fetch_dic类的定义
-* @Created: 2019-03-25
 */
 
 public class TensorOutput {

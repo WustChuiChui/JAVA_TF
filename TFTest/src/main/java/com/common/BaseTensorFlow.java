@@ -8,9 +8,7 @@ import org.tensorflow.Tensor;
 import java.io.IOException;
 import java.io.FileInputStream;
 import java.io.InputStream;
-import java.nio.DoubleBuffer;
-import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
+import java.nio.*;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -19,7 +17,6 @@ import org.slf4j.LoggerFactory;
 
 /*
 * @brief: 通用TensorFlow模型调用类的定义
-* @Created: 2019-03-25
 */
 public class BaseTensorFlow {
     Session session = null;
@@ -29,7 +26,7 @@ public class BaseTensorFlow {
     private  BaseTensorFlow baseTensorFlow = null;
 
     public static BaseTensorFlow getInstance(String modelPath) {
-        BaseTensorFlow baseTensorFlow = new BaseTensorFlow();
+       BaseTensorFlow baseTensorFlow = new BaseTensorFlow();
         if (baseTensorFlow.init(modelPath) != 0) {
             return null;
         }
@@ -78,7 +75,7 @@ public class BaseTensorFlow {
     */
     public int run(TensorInput tensorInput, TensorOutput tensorOutput) {
         if (tensorInput == null || tensorOutput == null) {
-            LOGGER.warn("base tensorflow model get null input.");
+            LOGGER.warn("base tensorflow model get null input. requestId: " + tensorInput.getRequestId());
             return -1;
         }
         List<TFNode> tfNodes = tensorInput.getTfNodeList();
@@ -87,12 +84,12 @@ public class BaseTensorFlow {
             for (int idx = 0; idx < tfNodes.size(); ++idx) {
                 TFNode node = tfNodes.get(idx);
                 if (node.dataType == null || StringUtils.isEmpty(node.tfName)) {
-                    LOGGER.warn("invalid input tensor found. " + node.tfName);
+                    LOGGER.warn("invalid input tensor found. requestId: " + tensorInput.getRequestId() + "\t node" + node.tfName);
                     return -1;
                 }
                 Tensor tensor = buildTensor(node.valueList, node.dataType, node.tfShape);
                 if (tensor == null) {
-                    LOGGER.error("input tensor is null. " + node.tfName);
+                    LOGGER.error("input tensor is null. requestId: " + tensorInput.getRequestId() + "\t node" + node.tfName);
                 }
                 runner.feed(node.tfName, tensor);
             }
@@ -104,7 +101,7 @@ public class BaseTensorFlow {
             List<Tensor<?>> res = runner.run();
             tensorOutput.setOutputMap(parseTensorResult(res, keyList));
 
-            //free momery
+            //free memory
             for (int idx = 0; idx < res.size(); ++idx) {
                 res.get(idx).close();
             }
@@ -125,10 +122,17 @@ public class BaseTensorFlow {
     private Tensor buildTensor(List values, DataType dataType, List<Integer> shapeList) {
         long[] bufferShape = shapeList.stream().mapToLong(Integer::longValue).toArray();
         String valueType = dataType.getDataType();
-        if (valueType.equals("int32") || valueType.equals("int64")) {
+        if (valueType.equals("int32")) {
             IntBuffer buffer = IntBuffer.allocate(values.size());
             for (int index = 0; index < values.size(); ++index) {
                 buffer.put((Integer) values.get(index));
+            }
+            buffer.flip();
+            return Tensor.create(bufferShape, buffer);
+        } else if (valueType.equals("int64")) {
+            LongBuffer buffer = LongBuffer.allocate(values.size());
+            for (int index = 0; index < values.size(); ++index) {
+                buffer.put((Long) values.get(index));
             }
             buffer.flip();
             return Tensor.create(bufferShape, buffer);
@@ -168,17 +172,42 @@ public class BaseTensorFlow {
         for (int idx = 0; idx < tensorNum; ++idx) {
             Tensor tensor = tensorList.get(idx);
             Integer outSize = getTensorSize(tensor);
-            //对于float等类型的Tensor,其返回结果直接转成Float, outsize为0
-            if (outSize <=0) {
+            if (outSize <= 0) {
                 result.put(keyList.get(idx), Float.toString(tensor.floatValue()));
                 continue;
             }
-            FloatBuffer outArray = FloatBuffer.allocate(outSize);
-            tensor.writeTo(outArray);
-            outArray.flip();
+
+            String tensorType = tensor.dataType().toString();
             StringBuffer  outStr = new StringBuffer();
-            while (outArray.hasRemaining()) {
-                outStr.append(Float.toString(outArray.get()) + ",");
+
+            if (tensorType.equals("INT64")) {
+                LongBuffer longArray = LongBuffer.allocate(outSize);
+                tensor.writeTo(longArray);
+                longArray.flip();
+                while (longArray.hasRemaining()) {
+                    outStr.append(Float.toString(longArray.get()) + ",");
+                }
+            } else if (tensorType.equals("FLOAT")) {
+                FloatBuffer floatArray = FloatBuffer.allocate(outSize);
+                tensor.writeTo(floatArray);
+                floatArray.flip();
+                while (floatArray.hasRemaining()) {
+                    outStr.append(Float.toString(floatArray.get()) + ",");
+                }
+            } else if (tensorType.equals("INT32")) {
+                IntBuffer intArray = IntBuffer.allocate(outSize);
+                tensor.writeTo(intArray);
+                intArray.flip();
+                while (intArray.hasRemaining()) {
+                    outStr.append(Float.toString(intArray.get()) + ",");
+                }
+            } else if (tensorType.equals("DOUBLE")) {
+                DoubleBuffer doubleArray = DoubleBuffer.allocate(outSize);
+                tensor.writeTo(doubleArray);
+                doubleArray.flip();
+                while (doubleArray.hasRemaining()) {
+                    outStr.append(Double.toString(doubleArray.get()) + ",");
+                }
             }
             outStr = outStr.deleteCharAt(outStr.length() - 1);
             result.put(keyList.get(idx), "[" + outStr.toString() + "]");
